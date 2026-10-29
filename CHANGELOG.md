@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-29
+
 ### Added
 
 - `app.RunWith` / `BuildWith` / `PolicyWith`: a binary in this module (the packages are internal) can replace the base routing policy and keep the configured middleware.
