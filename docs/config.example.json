@@ -1,0 +1,26 @@
+{
+  "state_dir": "~/.local/state/acp-router",
+  "audit_log": "~/.local/state/acp-router/audit.jsonl",
+  "backend": {
+    "kind": "exec",
+    "command": ["fir", "--mode", "acp"],
+    "inherit_env": ["PATH", "LANG"],
+    "env": {"FIR_LOG_LEVEL": "info"}
+  },
+  "policy": {
+    "route": "per_user",
+    "allow": ["slack:T0123:*", "zulip::42"],
+    "ownership": true,
+    "thread_cwd": true,
+    "max_concurrent_prompts": 2
+  },
+  "users": {
+    "slack:T0123:U0456": {
+      "env_file": "~/.config/acp-router/users/U0456.env",
+      "max_concurrent_prompts": 4
+    },
+    "zulip::42": {
+      "env": {"ANTHROPIC_BASE_URL": "https://llm.example.com"}
+    }
+  }
+}

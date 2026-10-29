@@ -1,0 +1,38 @@
+{
+  "supervisor": "none",
+  "spawned_by": "relay agent command (stdio ACP)",
+  "binary": "~/.local/bin/acp-router",
+  "require": {
+    "acp_router": ">=0.1.0"
+  },
+  "service": {
+    "config_path": "~/.config/acp-router/config.json"
+  },
+  "relay": {
+    "agent_cmd": [
+      "acp-router",
+      "-config",
+      "~/.config/acp-router/config.json"
+    ]
+  },
+  "config": {
+    "state_dir": "~/.local/state/acp-router",
+    "backend": {
+      "kind": "exec",
+      "command": [
+        "fir",
+        "--mode",
+        "acp"
+      ],
+      "inherit_env": [
+        "PATH",
+        "LANG"
+      ]
+    },
+    "policy": {
+      "route": "per_user",
+      "allow": [],
+      "max_concurrent_prompts": 2
+    }
+  }
+}

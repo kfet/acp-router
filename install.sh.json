@@ -1,0 +1,11 @@
+{
+  "repo": "kfet/acp-router",
+  "binary": "acp-router",
+  "brew_formula": "kfet/ai/acp-router",
+  "version_flag": "-version",
+  "example_tag": "v0.1.0",
+  "next_steps": [
+    "write ~/.config/acp-router/config.json (see docs/config.example.json)",
+    "point a relay's agent command at: acp-router -config ~/.config/acp-router/config.json"
+  ]
+}

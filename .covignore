@@ -1,0 +1,14 @@
+# Coverage exclusions — regex patterns matched against lines of the
+# raw `go test -coverprofile` output, applied before the 100% gate
+# by covgate (https://github.com/kfet/covgate).
+#
+# Convention: file-level patterns only. NO LINE NUMBERS. NO
+# PER-FUNCTION REGEXES. See AGENTS.md "Coverage".
+
+# Entry-point shim: cmd/<binary>/main.go is bare dispatch; the logic is
+# internal/app (fully covered).
+^github.com/kfet/acp-router/cmd/[^/]+/main\.go:
+
+# Test-support package: a scripted ACP agent driven by the router,
+# backend and app tests. Not product code.
+^github.com/kfet/acp-router/internal/testagent/

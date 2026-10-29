@@ -1,0 +1,100 @@
+version: 2
+project_name: acp-router
+
+builds:
+  - main: ./cmd/acp-router/
+    binary: acp-router
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "6"
+    ignore:
+      - goos: darwin
+        goarch: arm   # no darwin/arm (32-bit); darwin/arm64 is Apple Silicon
+
+archives:
+  - formats: [binary]
+    name_template: "acp-router-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+  extra_files:
+    - glob: LICENSE
+    - glob: THIRD_PARTY_NOTICES.md
+
+release:
+  github:
+    owner: kfet
+    name: acp-router
+  prerelease: auto
+  name_template: "acp-router {{.Version}}"
+  extra_files:
+    - glob: LICENSE
+    - glob: THIRD_PARTY_NOTICES.md
+
+# ---------------------------------------------------------------------------
+# Homebrew tap
+#
+# GoReleaser regenerates Formula/acp-router.rb on kfet/homebrew-ai on
+# every release (reusing fir's tap so users don't need a second tap).
+#
+# Users install with:
+#   brew install kfet/ai/acp-router
+# ---------------------------------------------------------------------------
+brews:
+  - name: acp-router
+    # Pushed over ssh with a WRITE deploy key on kfet/homebrew-ai,
+    # rather than with a personal access token. A deploy key is scoped
+    # to exactly one repository and does not expire, where a
+    # fine-grained PAT is account-wide, opaque once created, and
+    # capped at a one-year lifetime — i.e. it breaks silently, later.
+    # Each consumer repo has its OWN key, so one can be revoked
+    # without touching the others.
+    #
+    # private_key takes the key CONTENTS (GoReleaser writes them to a
+    # temp file itself), not a path.
+    repository:
+      owner: kfet
+      name: homebrew-ai
+      branch: main
+      git:
+        url: 'git@github.com:kfet/homebrew-ai.git'
+        private_key: '{{ index .Env "HOMEBREW_TAP_SSH_KEY" }}'
+    directory: Formula
+    url_template: "https://github.com/kfet/acp-router/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/kfet/acp-router"
+    description: "ACP-to-ACP router: one agent upstream, one ACP agent per user downstream"
+    license: MIT
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "acp-router: update to {{ .Tag }}"
+    # Skip the tap push when no key is configured, instead of failing
+    # the whole release. A fresh clone or a fork has no
+    # HOMEBREW_TAP_SSH_KEY, and a missing formula update is not a
+    # reason to withhold the binaries. "auto" additionally skips
+    # prereleases.
+    #
+    # index .Env rather than .Env.X so an entirely unset variable is an
+    # empty string instead of a template error.
+    skip_upload: '{{ if eq (index .Env "HOMEBREW_TAP_SSH_KEY") "" }}true{{ else }}auto{{ end }}'
+    test: |
+      system "#{bin}/acp-router", "--version"
+    # The downloaded artifact is named acp-router-<os>-<arch> (archives.formats=binary
+    # emits raw binaries, not tarballs), so `bin.install "acp-router"` fails
+    # with ENOENT. Glob the staged artifact and rename it on install.
+    install: |
+      bin.install Dir["acp-router-*"].first => "acp-router"
+
+changelog:
+  use: github-native
