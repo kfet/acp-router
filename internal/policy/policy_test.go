@@ -200,6 +200,75 @@ func TestThreadCwd(t *testing.T) {
 	}
 }
 
+// A request the inner policy rejects leaves nothing on disk.
+func TestThreadCwdRejectedMakesNoDir(t *testing.T) {
+	root := t.TempDir()
+	reject := proxy.PolicyFunc(func(context.Context, *proxy.Request) (*proxy.Decision, error) {
+		return nil, rejectf("no")
+	})
+	if _, err := ThreadCwd(root)(reject).Route(ctx, req("session/new", org("a"), nil)); !errors.Is(err, proxy.ErrRejected) {
+		t.Fatal(err)
+	}
+	if ents, _ := os.ReadDir(root); len(ents) != 0 {
+		t.Fatal(ents)
+	}
+	// A mkdir failure after the decision releases it.
+	f := filepath.Join(root, "file")
+	os.WriteFile(f, nil, 0o600)
+	released := false
+	hold := proxy.PolicyFunc(func(context.Context, *proxy.Request) (*proxy.Decision, error) {
+		return &proxy.Decision{Release: func() { released = true }}, nil
+	})
+	if _, err := ThreadCwd(f)(hold).Route(ctx, req("session/new", org("a"), nil)); err == nil || !released {
+		t.Fatal(err, released)
+	}
+}
+
+// Credentials never writes into a target's Env map (a custom policy may
+// share one across targets) and only reaches the user's own agent: a
+// shared agent (static, a support channel) is opened once, by whoever
+// speaks first, and must not carry that user's keys for everyone.
+func TestCredentialsOnlyOwnTargetAndCopies(t *testing.T) {
+	env := func(u string) (map[string]string, error) { return map[string]string{"KEY": u}, nil }
+	shared := map[string]string{"G": "1"}
+	both := proxy.PolicyFunc(func(context.Context, *proxy.Request) (*proxy.Decision, error) {
+		return &proxy.Decision{Targets: []backend.Target{{ID: TargetID("slack:T:a"), Env: shared}, {ID: "support", Env: shared}}}, nil
+	})
+	d, err := Credentials(env)(both).Route(ctx, req("session/new", org("a"), nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shared) != 1 {
+		t.Fatal("shared env mutated:", shared)
+	}
+	if own := d.Targets[0].Env; own["KEY"] != "slack:T:a" || own["G"] != "1" {
+		t.Fatal(own)
+	}
+	if sup := d.Targets[1].Env; sup["KEY"] != "" || sup["G"] != "1" {
+		t.Fatal(sup)
+	}
+}
+
+// An inner policy that sets its own cwd owns it: ThreadCwd neither
+// overrides it nor creates its own directory.
+func TestThreadCwdInnerOverride(t *testing.T) {
+	root := t.TempDir()
+	mine := proxy.PolicyFunc(func(_ context.Context, r *proxy.Request) (*proxy.Decision, error) {
+		r.Params["cwd"] = json.RawMessage(`"/elsewhere"`)
+		return &proxy.Decision{}, nil
+	})
+	r := req("session/new", org("a"), nil)
+	if _, err := ThreadCwd(root)(mine).Route(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if string(r.Params["cwd"]) != `"/elsewhere"` {
+		t.Fatal(string(r.Params["cwd"]))
+	}
+	if ents, _ := os.ReadDir(root); len(ents) != 0 {
+		t.Fatal(ents)
+	}
+}
+
 func TestCredentials(t *testing.T) {
 	env := func(u string) (map[string]string, error) {
 		if u == "slack:T:bad" {
@@ -207,13 +276,16 @@ func TestCredentials(t *testing.T) {
 		}
 		return map[string]string{"KEY": u}, nil
 	}
-	d, err := Credentials(env)(accept).Route(ctx, req("session/new", org("a"), nil))
+	own := proxy.PolicyFunc(func(_ context.Context, r *proxy.Request) (*proxy.Decision, error) {
+		return &proxy.Decision{Targets: []backend.Target{{ID: TargetID(User(r))}}}, nil
+	})
+	d, err := Credentials(env)(own).Route(ctx, req("session/new", org("a"), nil))
 	if err != nil || d.Targets[0].Env["KEY"] != "slack:T:a" {
 		t.Fatal(d, err)
 	}
 	released := false
 	withRelease := proxy.PolicyFunc(func(context.Context, *proxy.Request) (*proxy.Decision, error) {
-		return &proxy.Decision{Targets: []backend.Target{{Env: map[string]string{"B": "1"}}}, Release: func() { released = true }}, nil
+		return &proxy.Decision{Targets: []backend.Target{{ID: TargetID("slack:T:a"), Env: map[string]string{"B": "1"}}}, Release: func() { released = true }}, nil
 	})
 	if _, err := Credentials(env)(withRelease).Route(ctx, req("session/new", org("bad"), nil)); err == nil || !released {
 		t.Fatal(err, released)

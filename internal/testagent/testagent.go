@@ -20,7 +20,7 @@ import (
 // session/new emits a session/update for the new session before the
 // response; "_ping" answers {"prefix": Prefix}. Prompt text drives it:
 //
-//	"block"       wait for session/cancel (or request cancel), stop "cancelled"
+//	"block"       say "blocked: waiting for cancel", wait for session/cancel (or request cancel), stop "cancelled"
 //	"spoof:<sid>" emit a session/update for <sid> instead of the prompt's session
 //	"fail"        return a JSON-RPC error
 //	anything else echo it back as an agent_message_chunk, ask permission, end_turn
@@ -122,6 +122,9 @@ func (a *Agent) prompt(ctx context.Context, p params) (any, *acp.RequestError) {
 	}
 	switch {
 	case text == "block":
+		_ = a.Conn.SendNotification(ctx, "session/update", acp.SessionNotification{
+			SessionId: acp.SessionId(p.SessionID), Update: acp.UpdateAgentMessageText("blocked: waiting for cancel"),
+		})
 		select {
 		case <-a.cancelCh(p.SessionID):
 		case <-ctx.Done():

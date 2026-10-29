@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `app.RunWith` / `BuildWith` / `PolicyWith`: a binary in this module (the packages are internal) can replace the base routing policy and keep the configured middleware.
+- `examples/bychannel`: a custom policy (a support channel goes to one shared agent, DMs are refused) with its `acp-router-bychannel` binary.
+- `internal/testagent/cmd/acp-testagent`: the scripted test agent as a binary, for demos without an LLM.
+- `scripts/demo.sh` and `docs/demo.md`: an end-to-end demo in a throwaway box (per-user routing, ownership, allowlist, prompt cap, audit, custom policy, real `fir --mode acp` turns).
+
+### Fixed
+
+- `Credentials` adds a user's env only to that user's own target (`policy.TargetID`), on a copy of its `Env`. Before, a shared target (`static`, or a custom policy's) was opened with the first caller's credentials and then served everyone. A custom policy's shared `Env` map could also be written into, which leaked one user's env to later users.
+- `ThreadCwd` no longer creates the thread directory for a request the rest of the policy rejects. If an inner policy sets its own cwd, `ThreadCwd` keeps it (`policy.TakesCwd` tells a policy which methods carry one).
+- The SDK's INFO line on every normal connection close no longer reaches stderr unless `ACP_ROUTER_DEBUG` is on (`app.QuietSDK`, called by the binaries).
+- Config: with `policy.route` `static`, `users.<key>.env` / `env_file` is an error (use `backend.env`). The static agent is shared, so it never gets per-user env.
+
 ## [0.1.0] - 2026-10-29
 
 ### Added

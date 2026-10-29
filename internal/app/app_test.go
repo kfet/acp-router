@@ -6,13 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	acp "github.com/coder/acp-go-sdk"
+	kitlog "github.com/kfet/acp-kit/log"
 
+	"github.com/kfet/acp-router/internal/backend"
 	"github.com/kfet/acp-router/internal/config"
 	"github.com/kfet/acp-router/internal/origin"
 	"github.com/kfet/acp-router/internal/policy"
@@ -208,4 +211,73 @@ func TestUserEnv(t *testing.T) {
 		t.Fatal("missing env file")
 	}
 	var _ policy.EnvFunc = env
+}
+
+func TestPolicyWithBase(t *testing.T) {
+	dir := t.TempDir()
+	c := cfgFor(t, `{"state_dir":"`+dir+`","backend":{"command":["a"]},"policy":{"allow":["slack:T:a"]}}`)
+	var gotDef proxy.Policy
+	p := PolicyWith(c, func(cfg *config.Config, def proxy.Policy) proxy.Policy {
+		gotDef = def
+		return proxy.PolicyFunc(func(context.Context, *proxy.Request) (*proxy.Decision, error) {
+			return &proxy.Decision{Targets: []backend.Target{{ID: "custom"}}}, nil
+		})
+	})
+	if _, ok := gotDef.(policy.PerUser); !ok || c.StateDir != dir {
+		t.Fatalf("%T", gotDef)
+	}
+	d, err := route(t, p, "session/new", "a")
+	if err != nil || d.Targets[0].ID != "custom" || d.Labels["owner"] != "slack:T:a" {
+		t.Fatal(d, err)
+	}
+	// Middleware still wraps the custom base.
+	if _, err := route(t, p, "session/new", "b"); !errors.Is(err, proxy.ErrRejected) {
+		t.Fatal(err)
+	}
+}
+
+func TestRunWithBase(t *testing.T) {
+	dir := t.TempDir()
+	cfg := writeConfig(t, dir, "")
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	called := make(chan struct{}, 1)
+	done := make(chan int)
+	go func() {
+		done <- RunWith([]string{"-config", cfg}, inR, outW, io.Discard, "test", func(_ *config.Config, def proxy.Policy) proxy.Policy {
+			called <- struct{}{}
+			return def
+		})
+		outW.Close()
+	}()
+	go io.Copy(io.Discard, outR)
+	<-called
+	inW.Close()
+	if code := <-done; code != 0 {
+		t.Fatal(code)
+	}
+}
+
+// The ACP SDK logs every normal connection close at INFO through
+// slog.Default; unless ACP_ROUTER_DEBUG is on, QuietSDK keeps stderr for
+// warnings. Run itself leaves global logging alone.
+func TestQuietSDK(t *testing.T) {
+	defer slog.SetLogLoggerLevel(slog.LevelInfo)
+	info := func() bool { return slog.Default().Enabled(context.Background(), slog.LevelInfo) }
+	slog.SetLogLoggerLevel(slog.LevelInfo)
+	Run([]string{"-version"}, nil, io.Discard, io.Discard, "v")
+	if !info() {
+		t.Fatal("Run changed global logging")
+	}
+	QuietSDK()
+	if info() {
+		t.Fatal("INFO still enabled")
+	}
+	kitlog.SetEnabled(true)
+	defer kitlog.SetEnabled(false)
+	slog.SetLogLoggerLevel(slog.LevelInfo)
+	QuietSDK()
+	if !info() {
+		t.Fatal("debug lost INFO")
+	}
 }

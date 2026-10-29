@@ -5,40 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/kfet/acp-router/examples/bychannel"
 	"github.com/kfet/acp-router/internal/backend"
 	"github.com/kfet/acp-router/internal/origin"
 	"github.com/kfet/acp-router/internal/policy"
 	"github.com/kfet/acp-router/internal/proxy"
 )
 
-// byChannel is a custom routing policy: one shared agent answers the
-// support channel, DMs are refused, everything else falls through to the
-// per-user default. Existing sessions stay on the target that created them.
-type byChannel struct {
-	support string
-	shared  backend.Target
-	next    proxy.Policy
-}
-
-func (p byChannel) Route(ctx context.Context, r *proxy.Request) (*proxy.Decision, error) {
-	if r.Session != nil && r.Session.Target == p.shared.ID {
-		return &proxy.Decision{Targets: []backend.Target{p.shared}}, nil
-	}
-	if o := r.Origin; o != nil {
-		if o.IsDM {
-			return nil, fmt.Errorf("%w: DMs are not served here", proxy.ErrRejected)
-		}
-		if o.ChannelID == p.support {
-			return &proxy.Decision{Targets: []backend.Target{p.shared}}, nil
-		}
-	}
-	return p.next.Route(ctx, r)
-}
-
+// examples/bychannel is a custom routing policy: one shared agent answers
+// the support channel, DMs are refused, everything else falls through to
+// the per-user default.
 func Example_customPolicy() {
 	perUser := policy.PerUser{Template: backend.Target{Kind: "exec", Command: []string{"fir", "--mode", "acp"}}, Root: "/srv/acp-router/users"}
 	route := proxy.Wrap(
-		byChannel{support: "C-SUPPORT", shared: backend.Target{ID: "support", Kind: "socket", Socket: "/run/support.sock"}, next: perUser},
+		bychannel.Policy{Support: "C-SUPPORT", Shared: backend.Target{ID: "support", Kind: "socket", Socket: "/run/support.sock"}, Next: perUser},
 		policy.Allowlist([]string{"slack:T1:*"}),
 		policy.Ownership(),
 	)

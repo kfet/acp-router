@@ -16,6 +16,7 @@
 package policy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -112,7 +113,7 @@ func (p PerUser) Route(_ context.Context, r *proxy.Request) (*proxy.Decision, er
 		return nil, rejectf("%s: no user (origin _meta missing)", r.Method)
 	}
 	t := p.Template
-	t.ID = "user:" + u
+	t.ID = TargetID(u)
 	t.Dir = filepath.Join(p.Root, Safe(u))
 	t.Socket = strings.ReplaceAll(t.Socket, "{user}", Safe(u))
 	t.Env = maps.Clone(t.Env)
@@ -222,31 +223,53 @@ var cwdMethods = map[string]bool{
 	"session/new": true, "session/load": true, "session/resume": true, "session/fork": true,
 }
 
+// TakesCwd reports whether method carries a cwd that ThreadCwd sets.
+func TakesCwd(method string) bool { return cwdMethods[method] }
+
 // ThreadCwd replaces the relay's cwd (opaque, possibly a placeholder) on
 // session/new, load, resume and fork with
-// "<root>/<safe user>/threads/<channel>/<thread>", creating it. Requests
+// "<root>/<safe user>/threads/<channel>/<thread>", creating it once the
+// rest of the chain has accepted the request. An inner policy that sets a
+// different cwd owns it. Requests
 // without an origin keep their cwd.
 func ThreadCwd(root string) proxy.Middleware {
 	return func(next proxy.Policy) proxy.Policy {
 		return proxy.PolicyFunc(func(ctx context.Context, r *proxy.Request) (*proxy.Decision, error) {
-			if cwdMethods[r.Method] && r.Origin != nil {
-				o := r.Origin
-				dir := filepath.Join(root, Safe(UserKey(*o)), "threads", Safe(o.ChannelID), Safe(o.ThreadID))
-				if err := os.MkdirAll(dir, 0o700); err != nil {
-					return nil, err
-				}
-				r.Params["cwd"], _ = json.Marshal(dir) // a string always marshals
+			if !TakesCwd(r.Method) || r.Origin == nil {
+				return next.Route(ctx, r)
 			}
-			return next.Route(ctx, r)
+			o := r.Origin
+			dir := filepath.Join(root, Safe(UserKey(*o)), "threads", Safe(o.ChannelID), Safe(o.ThreadID))
+			cwd, _ := json.Marshal(dir) // a string always marshals
+			r.Params["cwd"] = cwd
+			d, err := next.Route(ctx, r)
+			if err != nil {
+				return nil, err // rejected: leave nothing on disk
+			}
+			if !bytes.Equal(r.Params["cwd"], cwd) {
+				return d, nil // the inner policy chose its own cwd
+			}
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				if d.Release != nil {
+					d.Release()
+				}
+				return nil, err
+			}
+			return d, nil
 		})
 	}
 }
 
+// TargetID is the ID PerUser gives user's agent.
+func TargetID(user string) string { return "user:" + user }
+
 // EnvFunc returns the environment overrides for a user.
 type EnvFunc func(user string) (map[string]string, error)
 
-// Credentials adds env(user) to every chosen target's Env. Env only
-// reaches an agent when its target is first opened.
+// Credentials adds env(user) to the user's own target (TargetID(user)),
+// on a copy of its Env. Shared targets (static, or a custom policy's) get
+// none: they are opened once and serve every user. Env only reaches an
+// agent when its target is first opened.
 func Credentials(env EnvFunc) proxy.Middleware {
 	return func(next proxy.Policy) proxy.Policy {
 		return proxy.PolicyFunc(func(ctx context.Context, r *proxy.Request) (*proxy.Decision, error) {
@@ -261,12 +284,15 @@ func Credentials(env EnvFunc) proxy.Middleware {
 				}
 				return nil, err
 			}
+			own := TargetID(User(r))
 			for i := range d.Targets {
-				t := &d.Targets[i]
-				if t.Env == nil {
-					t.Env = map[string]string{}
+				if t := &d.Targets[i]; t.ID == own {
+					t.Env = maps.Clone(t.Env)
+					if t.Env == nil {
+						t.Env = map[string]string{}
+					}
+					maps.Copy(t.Env, e)
 				}
-				maps.Copy(t.Env, e)
 			}
 			return d, nil
 		})

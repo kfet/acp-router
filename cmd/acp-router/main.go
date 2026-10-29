@@ -19,5 +19,6 @@ func main() {
 		os.Exit(distkit.Main(dist.Config(version)))
 	}
 	kitlog.Register("ACP_ROUTER_DEBUG")
+	app.QuietSDK()
 	os.Exit(app.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, version))
 }

@@ -48,10 +48,16 @@ func TestParseErrors(t *testing.T) {
 		`{"state_dir":"/s","backend":{"kind":"nope"}}`,
 		`{"state_dir":"/s","backend":{"command":["a"]},"agent_capabilities":"x"}`,
 		`{"state_dir":"/s","backend":{"command":["a"]},"policy":{"route":"x"}}`,
+		`{"state_dir":"/s","backend":{"command":["a"]},"policy":{"route":"static"},"users":{"u":{"env":{"K":"v"}}}}`,
+		`{"state_dir":"/s","backend":{"command":["a"]},"policy":{"route":"static"},"users":{"u":{"env_file":"/e"}}}`,
 	} {
 		if _, err := Parse([]byte(s)); err == nil {
 			t.Errorf("%s accepted", s)
 		}
+	}
+	// A per-user limit is fine on the static route.
+	if _, err := Parse([]byte(`{"state_dir":"/s","backend":{"command":["a"]},"policy":{"route":"static"},"users":{"u":{"max_concurrent_prompts":1}}}`)); err != nil {
+		t.Error(err)
 	}
 	// Invalid raw JSON can only arrive via direct struct use.
 	c := &Config{StateDir: "/s", Backend: Backend{Command: []string{"a"}}, AgentCapabilities: []byte("{")}

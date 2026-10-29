@@ -53,12 +53,12 @@ Then point the relay's agent command at `acp-router -config ~/.config/acp-router
 | `policy.ownership` | (default true) only the creator may use a session |
 | `policy.thread_cwd` | (default true) cwd = `<state_dir>/users/<user>/threads/<channel>/<thread>` |
 | `policy.max_concurrent_prompts` | in-flight prompts per user (0 = no cap) |
-| `users.<key>.env`, `env_file` | per-user env. `env_file` is `KEY=VALUE` lines, read when the agent is spawned |
+| `users.<key>.env`, `env_file` | per-user env for the user's own `per_user` agent (not the shared `static` one). `env_file` is `KEY=VALUE` lines, read when the agent is spawned |
 | `users.<key>.max_concurrent_prompts` | per-user override |
 
 ## Extending
 
-- **Routing / RBAC:** implement `proxy.Policy` or `proxy.Middleware`. See [docs/policy.md](docs/policy.md) for an example.
+- **Routing / RBAC:** implement `proxy.Policy` or `proxy.Middleware`. See [docs/policy.md](docs/policy.md) for an example, and [docs/demo.md](docs/demo.md) for an end-to-end run.
 - **Backends:** implement `backend.Backend` (`Open(ctx, target, handler) (Peer, error)`). For example, a sandbox or exec-environment service. The built-in `socket` backend already dials a per-user socket served by such a service.
 
 Set `ACP_ROUTER_DEBUG=1` for debug logging on stderr.

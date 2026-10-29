@@ -12,3 +12,6 @@
 # Test-support package: a scripted ACP agent driven by the router,
 # backend and app tests. Not product code.
 ^github.com/kfet/acp-router/internal/testagent/
+
+# Example binary shim: bare dispatch into examples/bychannel (covered).
+^github.com/kfet/acp-router/examples/[^/]+/cmd/[^/]+/main\.go:

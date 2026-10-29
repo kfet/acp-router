@@ -154,6 +154,9 @@ func (c *Config) normalize() error {
 		}
 	}
 	for k, u := range c.Users {
+		if c.Policy.Route == RouteStatic && (len(u.Env) > 0 || u.EnvFile != "") {
+			return fmt.Errorf("users.%s: env and env_file need route per_user; the static agent is shared, use backend.env", k)
+		}
 		if u.EnvFile != "" {
 			u.EnvFile = ExpandHome(u.EnvFile)
 			c.Users[k] = u
