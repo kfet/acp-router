@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-29
+
 ### Added
 
 - A generic ACP-to-ACP router. Upstream it is one ACP agent (stdio) for relays. Downstream it reaches the agents chosen by a pluggable routing policy.
